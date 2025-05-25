@@ -1,1014 +1,452 @@
 // ==UserScript==
-// @name         哔哩极音
-// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3-1.01.user.js
+// @name         哔哩极音辅助1.0
+// @namespace    https://github.com/xxdz-Official/biliJiyin/blob/2a30a1741dde7a7c1b27d9c1fc2a6c105f28c377/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A91.0.user.js
 // @version      1.0
-// @description  把B站改造成实用的音乐播放器！
+// @description  哔哩极音弥补+增强（恢复画质/弹幕/自动连播，增加音频可视化）
 // @author       小小电子xxdz
-// @match        https://www.bilibili.com/list/*
+// @match        https://www.bilibili.com/video/*
 // @icon         https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
-
+//作者主页：https://space.bilibili.com/3461569935575626
 (function() {
     'use strict';
 
-    let hasChangedQuality = false;
-    let lastFullCheckTime = 0;
-    const FULL_CHECK_INTERVAL = 200;
-    let isPageLoaded = false;
-    let lastVideoHref = '';
-    let isReplaying = false;
-    let replayChecker = null;
-    let videoStartObserver = null;
+    // 全局配置
+    const CONFIG = {
+        // 画质选择配置
+        quality: {
+            targetValue: '80',  // 1080P的data-value
+            maxRetry: 30,       // 最大重试次数
+            interval: 1000      // 检测间隔(ms)
+        },
 
-    function waitForPageLoad() {
-        if (document.readyState === 'complete') {
-            isPageLoaded = true;
-            initializeScript();
-        } else {
-            window.addEventListener('load', function() {
-                isPageLoaded = true;
-                initializeScript();
+        // 元素选择器
+        elements: {
+            dmSwitch: '.bpx-player-dm-switch input[type="checkbox"]',
+            radioButton: 'input.bui-radio-input[value="2"][name="bui-radio1"]',
+            qualityItem: 'li.bpx-player-ctrl-quality-menu-item[data-value="80"]',
+            qualityBtn: '.bpx-player-ctrl-quality',
+            videoElement: 'video'
+        },
+
+        // 音频可视化配置
+        visualizer: {
+            enabled: false,      // 默认不显示可视化
+            alwaysAnalyze: true, // 始终后台分析
+            fftSize: 2048,      // 频率分析精度
+            smoothing: 0.4,     // 平滑系数
+            minDecibels: -90,   // 最小分贝
+            maxDecibels: -10    // 最大分贝
+        },
+
+        // 超时设置
+        timeout: 20000
+    };
+
+    // 全局状态变量
+    const state = {
+        retryCount: 0,
+        dmHandled: false,
+        radioHandled: false,
+        audioContext: null,
+        analyser: null,
+        source: null,
+        animationId: null,
+        visualizerVisible: false
+    };
+
+    // ==================== 音频分析核心 ====================
+    function initAudioContext() {
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            state.analyser = state.audioContext.createAnalyser();
+            state.analyser.fftSize = CONFIG.visualizer.fftSize;
+            state.analyser.smoothingTimeConstant = CONFIG.visualizer.smoothing;
+            state.analyser.minDecibels = CONFIG.visualizer.minDecibels;
+            state.analyser.maxDecibels = CONFIG.visualizer.maxDecibels;
+            console.log('音频分析器初始化完成');
+        }
+    }
+
+    function connectAudioSource() {
+        const video = document.querySelector(CONFIG.elements.videoElement);
+        if (video && !state.source) {
+            try {
+                state.source = state.audioContext.createMediaElementSource(video);
+                state.source.connect(state.analyser);
+                state.analyser.connect(state.audioContext.destination);
+                console.log('音频源已连接');
+            } catch (e) {
+                console.error('音频连接失败:', e);
+            }
+        }
+    }
+
+    function startAudioAnalysis() {
+        if (!CONFIG.visualizer.alwaysAnalyze) return;
+
+        // 自动恢复暂停的上下文
+        if (state.audioContext && state.audioContext.state === 'suspended') {
+            state.audioContext.resume().then(() => {
+                console.log('音频上下文已恢复');
             });
         }
+
+        // 初始化音频分析
+        initAudioContext();
+
+        // 持续检测视频元素
+        const videoObserver = new MutationObserver(() => {
+            connectAudioSource();
+        });
+        videoObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // 立即尝试连接
+        connectAudioSource();
     }
 
-    function initializeScript() {
-        console.log('页面已加载，开始初始化脚本（>ω< ）');//这些都是输出到控制台，就方便调试可检查问题
-        setGradientBackground();
-        hideRootBg1();
-        modifyPageTitle();
-        shrinkTargetElement();
-        adjustPlaylistContainerStyle();
-        removeNewElements();
-        mainCheck();
-        clickTargetElement();
-        startURLChangeObserver();
-        startVideoReplayCheck();
-        addVolumeControl();
-        startVideoStartObserver();
-        startAudioVisualizer();
-    }
+    // ==================== 可视化控制 ====================
+    function createVisualizerUI() {
+        // 创建开关按钮
+        const toggleBtn = document.createElement('div');
+        toggleBtn.className = 'xxdz-visualizer-toggle';
+        toggleBtn.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background: ${CONFIG.visualizer.enabled ? 'rgba(0,255,157,0.7)' : 'rgba(0,0,0,0.7)'};
+            border-radius: 50%;
+            z-index: 10001;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            box-shadow: ${CONFIG.visualizer.enabled ? '0 0 15px rgba(0,255,157,0.8)' : '0 0 10px rgba(0,255,157,0.5)'};
+            transition: all 0.3s;
+            user-select: none;
+        `;
+        toggleBtn.innerHTML = '🔊';
+        toggleBtn.title = CONFIG.visualizer.enabled ? '点击关闭音频可视化' : '点击开启音频可视化';
 
-// 音频分析器功能（带示波器和优化效果）================================
-    //ps:每一帧都可以独立保存成png镂空图片！
-function startAudioVisualizer() {
-    const canvas = document.createElement('canvas');
-    canvas.className = 'xxdz-audio-visualizer';
-    canvas.style.cssText = `
-        position: fixed;
-        bottom: 10px;
-        right: 10px;
-        width: 320px;
-        height: 140px;
-        background: rgba(0,0,0,0.8);
-        border-radius: 5px;
-        z-index: 10000;
-        box-shadow: 0 0 20px rgba(58,204,204,0.7);
-        backdrop-filter: blur(5px);
-        cursor: move;
-        touch-action: none;
-    `;
-//↑部分参数说明书：
-//background:背景透明度（最后的值）0.8
-//border-radius:修改圆角为5px
-//box-shadow://阴影（发光）：水平/垂直阴影偏移量，阴影模糊半径，阴影颜色RGB和透明度
-//backdrop-filter:背景模糊度 5px
-    // 拖动功能
-    let isDragging = false;
-    let startX = 0, startY = 0;
-    let initialLeft = null, initialTop = null;
+        toggleBtn.addEventListener('click', toggleVisualizer);
+        document.body.appendChild(toggleBtn);
 
-    const handleMouseDown = (e) => {
-        isDragging = true;
-        const rect = canvas.getBoundingClientRect();
-        startX = e.clientX || e.touches[0].clientX;
-        startY = e.clientY || e.touches[0].clientY;
-        initialLeft = rect.left;
-        initialTop = rect.top;
-        canvas.style.transition = 'none';
-        e.preventDefault();
-    };
+        // 创建可视化画布
+        const canvas = document.createElement('canvas');
+        canvas.className = 'xxdz-audio-visualizer';
+        canvas.style.cssText = `
+            position: fixed;
+            bottom: 70px;
+            right: 20px;
+            width: 320px;
+            height: 140px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 5px;
+            z-index: 10000;
+            box-shadow: 0 0 20px rgba(58,204,204,0.7);
+            backdrop-filter: blur(5px);
+            cursor: move;
+            touch-action: none;
+            transition: all 0.3s;
+            opacity: ${CONFIG.visualizer.enabled ? '1' : '0'};
+            transform: translateY(${CONFIG.visualizer.enabled ? '0' : '20px'});
+            display: ${CONFIG.visualizer.enabled ? 'block' : 'none'};
+        `;
+        canvas.width = 320;
+        canvas.height = 140;
+        document.body.appendChild(canvas);
 
-    const handleMouseMove = (e) => {
-        if (!isDragging) return;
-        const currentX = e.clientX || e.touches[0].clientX;
-        const currentY = e.clientY || e.touches[0].clientY;
+        // 设置拖动功能
+        setupDraggable(canvas);
 
-        const deltaX = currentX - startX;
-        const deltaY = currentY - startY;
-
-        let newLeft = initialLeft + deltaX;
-        let newTop = initialTop + deltaY;
-
-        // 网页边界检查
-        newLeft = Math.max(0, Math.min(window.innerWidth - canvas.offsetWidth, newLeft));
-        newTop = Math.max(0, Math.min(window.innerHeight - canvas.offsetHeight, newTop));
-
-        canvas.style.left = `${newLeft}px`;
-        canvas.style.right = 'auto';
-        canvas.style.top = `${newTop}px`;
-    };
-
-    const handleMouseUp = () => {
-        isDragging = false;
-        canvas.style.transition = 'all 0.3s ease';
-        const rect = canvas.getBoundingClientRect();
-        initialLeft = rect.left;
-        initialTop = rect.top;
-    };
-
-    // 事件监听
-    canvas.addEventListener('mousedown', handleMouseDown);
-    canvas.addEventListener('touchstart', handleMouseDown);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('touchmove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('touchend', handleMouseUp);
-
-    document.body.appendChild(canvas);
-    const ctx = canvas.getContext('2d');
-    canvas.width = 320;
-    canvas.height = 140;
-
-    // 增强的音频分析配置
-    let audioContext, analyser, source;
-    let isVisualizing = true;
-
-    function initAudioContext() {
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 2048; // 更高的频率分辨率
-            analyser.smoothingTimeConstant = 0.4; // 更灵敏的响应
-            analyser.minDecibels = -90;
-            analyser.maxDecibels = -10;
-        }
-
-        const video = document.querySelector('video');
-        if (video && !source) {
-            source = audioContext.createMediaElementSource(video);
-            source.connect(analyser);
-            analyser.connect(audioContext.destination);
+        // 如果默认开启，则启动可视化
+        if (CONFIG.visualizer.enabled) {
+            startVisualization(canvas);
         }
     }
 
-    function draw() {
-        if (!isVisualizing) return;
+    function toggleVisualizer() {
+        CONFIG.visualizer.enabled = !CONFIG.visualizer.enabled;
+        const toggleBtn = document.querySelector('.xxdz-visualizer-toggle');
+        const canvas = document.querySelector('.xxdz-audio-visualizer');
 
-        // 获取双通道数据
-        const freqData = new Uint8Array(analyser.frequencyBinCount);
-        const waveData = new Uint8Array(analyser.fftSize);
-        analyser.getByteFrequencyData(freqData);
-        analyser.getByteTimeDomainData(waveData);
+        if (CONFIG.visualizer.enabled) {
+            // 开启状态
+            toggleBtn.style.background = 'rgba(0,255,157,0.7)';
+            toggleBtn.style.boxShadow = '0 0 15px rgba(0,255,157,0.8)';
+            toggleBtn.title = '点击关闭音频可视化';
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 显示画布
+            canvas.style.display = 'block';
+            setTimeout(() => {
+                canvas.style.opacity = '1';
+                canvas.style.transform = 'translateY(0)';
+            }, 10);
 
-        // 绘制示波器（上半部分）
+            // 启动可视化
+            startVisualization(canvas);
+        } else {
+            // 关闭状态
+            toggleBtn.style.background = 'rgba(0,0,0,0.7)';
+            toggleBtn.style.boxShadow = '0 0 10px rgba(0,255,157,0.5)';
+            toggleBtn.title = '点击开启音频可视化';
+
+            // 隐藏画布
+            canvas.style.opacity = '0';
+            canvas.style.transform = 'translateY(20px)';
+            setTimeout(() => {
+                canvas.style.display = 'none';
+            }, 300);
+
+            // 停止动画
+            if (state.animationId) {
+                cancelAnimationFrame(state.animationId);
+                state.animationId = null;
+            }
+        }
+    }
+
+    function startVisualization(canvas) {
+        if (!state.analyser) return;
+        if (state.animationId) cancelAnimationFrame(state.animationId);
+
+        const ctx = canvas.getContext('2d');
+        const bufferLength = state.analyser.frequencyBinCount;
+        const freqData = new Uint8Array(bufferLength);
+        const waveData = new Uint8Array(state.analyser.fftSize);
+
+        function draw() {
+            if (!CONFIG.visualizer.enabled) return;
+
+            // 获取分析数据
+            state.analyser.getByteFrequencyData(freqData);
+            state.analyser.getByteTimeDomainData(waveData);
+
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制波形
+            drawWaveform(ctx, waveData, canvas);
+
+            // 绘制频谱
+            drawSpectrum(ctx, freqData, canvas);
+
+            // 继续动画循环
+            state.animationId = requestAnimationFrame(draw);
+        }
+
+        // 开始绘制
+        draw();
+    }
+
+    function drawWaveform(ctx, data, canvas) {
         ctx.beginPath();
-        ctx.strokeStyle = '#00FF9D'; // 线条的颜色
+        ctx.strokeStyle = '#00FF9D';
         ctx.lineWidth = 1.5;
         ctx.shadowBlur = 10;
-        ctx.shadowColor = '#00A1D6'; // 线条发的光颜色
-        for (let i = 0; i < waveData.length; i++) {
-            const x = (i / waveData.length) * canvas.width;
-            const y = (1 - waveData[i] / 255) * 60 + 10; // 顶部区域
+        ctx.shadowColor = '#00A1D6';
+
+        for (let i = 0; i < data.length; i++) {
+            const x = (i / data.length) * canvas.width;
+            const y = (1 - data[i] / 255) * 60 + 10;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
         ctx.stroke();
+    }
 
-        // 绘制频谱（下半部分）
-        const barCount = 128; // 更多频段
+    function drawSpectrum(ctx, data, canvas) {
+        const barCount = 128;
         const barWidth = canvas.width / barCount;
-        for (let i = 0; i < barCount; i++) {
-            const value = freqData[Math.floor(i * 1.5)]; // 增强高频响应
-            const height = (value / 255) * 100; // *的值是幅度
-            const y = canvas.height - height - 0; // 距离窗口底部的大小
 
-            // 动态颜色映射
-            const hue = (i / barCount) * 360 + (performance.now() / 20) % 360; // 流动的色相
+        for (let i = 0; i < barCount; i++) {
+            const value = data[Math.floor(i * 1.5)];
+            const height = (value / 255) * 100;
+            const y = canvas.height - height;
+
+            const hue = (i / barCount) * 360 + (performance.now() / 20) % 360;
             const gradient = ctx.createLinearGradient(0, y, 0, canvas.height);
             gradient.addColorStop(0, `hsla(${hue}, 100%, 50%, 0.9)`);
             gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 100%, 30%, 0.5)`);
 
             ctx.fillStyle = gradient;
-            ctx.fillRect(
-                i * barWidth + 2,
-                y,
-                barWidth - 4,
-                height
-            );
+            ctx.fillRect(i * barWidth + 2, y, barWidth - 4, height);
         }
 
-        // 频段标识（带发光效果）
-        ctx.shadowBlur = 8; // 文字发光模糊度
-        ctx.shadowColor = 'rgba(255,255,255,0.5)'; // 发光颜色透明度
+        // 频段标识
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = 'rgba(255,255,255,0.5)';
         ctx.fillStyle = '#FFF';
         ctx.font = 'bold 13px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('高', canvas.width / 4, canvas.height - 15);
-        ctx.fillText('♪（>ω<*）', canvas.width / 2, canvas.height - 15);
+        ctx.fillText('(* ≧▽≦)ツ♪', canvas.width / 2, canvas.height - 15);
         ctx.fillText('低', canvas.width * 3 / 4, canvas.height - 15);
     }
 
-    // 60FPS动画循环
-    function animate() {
-        draw();
-        if (isVisualizing) requestAnimationFrame(animate);
+    function setupDraggable(element) {
+        let isDragging = false;
+        let startX = 0, startY = 0;
+        let initialLeft = null, initialTop = null;
+
+        const handleMouseDown = (e) => {
+            isDragging = true;
+            const rect = element.getBoundingClientRect();
+            startX = e.clientX || e.touches[0].clientX;
+            startY = e.clientY || e.touches[0].clientY;
+            initialLeft = rect.left;
+            initialTop = rect.top;
+            element.style.transition = 'none';
+            e.preventDefault();
+        };
+
+        const handleMouseMove = (e) => {
+            if (!isDragging) return;
+            const currentX = e.clientX || e.touches[0].clientX;
+            const currentY = e.clientY || e.touches[0].clientY;
+
+            const deltaX = currentX - startX;
+            const deltaY = currentY - startY;
+
+            let newLeft = initialLeft + deltaX;
+            let newTop = initialTop + deltaY;
+
+            // 边界检查
+            newLeft = Math.max(0, Math.min(window.innerWidth - element.offsetWidth, newLeft));
+            newTop = Math.max(0, Math.min(window.innerHeight - element.offsetHeight, newTop));
+
+            element.style.left = `${newLeft}px`;
+            element.style.right = 'auto';
+            element.style.top = `${newTop}px`;
+        };
+
+        const handleMouseUp = () => {
+            isDragging = false;
+            element.style.transition = 'all 0.3s ease';
+        };
+
+        element.addEventListener('mousedown', handleMouseDown);
+        element.addEventListener('touchstart', handleMouseDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('touchmove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('touchend', handleMouseUp);
     }
 
-    // 自动初始化
-    const initVisualizer = () => {
-        initAudioContext();
-        animate();
-    };
-
-    // 视频检测
-    new MutationObserver((mutations) => {
-        if (document.querySelector('video')) {
-            if (!audioContext) initVisualizer();
+    // ==================== 必要功能（弥补哔哩极音主程序对视频清晰度、弹幕开关、自动连播的可记忆设置） ====================
+    //现在会自动修改成1080p、弹幕开启、自动连播关闭的状态
+    //如有需求可自行修改
+    function clickElement(selector, description) {
+        const element = document.querySelector(selector);
+        if (element) {
+            console.log(`找到${description}元素，正在点击...`);
+            element.click();
+            return true;
         }
-    }).observe(document.body, { childList: true, subtree: true });
+        return false;
+    }
 
-    // 初始检测
-    if (document.querySelector('video')) initVisualizer();
-}
-//音频音谱结束================================================================
-    // 新增功能：视频总是从头开始播放
-    function startVideoStartObserver() {
-        // 先清除旧的观察器
-        if (videoStartObserver) {
-            videoStartObserver.disconnect();
+    function waitForElement(selector, callback, options = {}) {
+        const { timeout = 5000, interval = 500 } = options;
+        const startTime = Date.now();
+
+        function check() {
+            const element = document.querySelector(selector);
+            if (element) {
+                callback(element);
+            } else if (Date.now() - startTime < timeout) {
+                setTimeout(check, interval);
+            } else {
+                console.warn(`等待元素超时: ${selector}`);
+            }
         }
 
-        // 创建新的观察器
-        videoStartObserver = new MutationObserver(function(mutations) {
-            const videoElement = document.querySelector('video');
-            if (videoElement && !videoElement.hasAttribute('data-xxdz-reset')) {
-                videoElement.setAttribute('data-xxdz-reset', 'true');
-                resetVideoToStart(videoElement);
+        check();
+    }
 
-                // 监听播放事件
-                videoElement.addEventListener('play', function() {
-                    if (this.currentTime > 0.5) { // 如果播放位置不是开头
-                        this.currentTime = 0;
-                    }
-                });
-
-                console.log('已设置视频总是从头开始播放');
+    function handleDmSetting() {
+        if (state.dmHandled) return;
+        waitForElement('.bpx-player-dm-setting.disabled', () => {
+            if (clickElement(CONFIG.elements.dmSwitch, '弹幕开关')) {
+                state.dmHandled = true;
             }
         });
-
-        // 开始观察文档变化
-        videoStartObserver.observe(document, {
-            childList: true,
-            subtree: true,
-            attributes: false,
-            characterData: false
-        });
     }
 
-    function resetVideoToStart(videoElement) {
-        if (!videoElement) return;
-        try {
-            // 立即设置到开头
-            videoElement.currentTime = 0;
-        } catch (e) {
-            console.error('设置视频从头播放时出错啦＞︿＜:', e);
+    function handleRadioButton() {
+        if (state.radioHandled) return;
+        if (clickElement(CONFIG.elements.radioButton, '关闭自动轮播')) {
+            state.radioHandled = true;
+        } else {
+            waitForElement(CONFIG.elements.radioButton, (element) => {
+                element.click();
+                state.radioHandled = true;
+            });
         }
     }
 
-    function addVolumeControl() {
-        const elementToRemove = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]/div[1]/div[2]/div/div[4]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-        if (elementToRemove) {
-            elementToRemove.remove();
-            console.log('已删除元素播放列表容器');
-        }
+    function handleQuality() {
+        if (clickElement(CONFIG.elements.qualityItem, '1080P画质')) return;
 
-        const targetElement = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]/div[1]/div[2]/div/div[3]/div',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (targetElement && !targetElement.nextElementSibling?.classList.contains('xxdz-volume-container')) {
-            const container = document.createElement('div');
-            container.className = 'xxdz-volume-container';
-            container.style.cssText = `
-                display: inline-flex;
-                align-items: center;
-                margin-left: 10px;
-            `;
-
-            const volumeText = document.createElement('span');
-            volumeText.className = 'xxdz-volume-text';
-            volumeText.textContent = '音量大小:';
-            volumeText.style.cssText = `
-                font-size: 12px;
-                color: #FFFFFF;
-                margin-right: 5px;
-            `;
-            container.appendChild(volumeText);
-
-            const volumeControl = document.createElement('div');
-            volumeControl.className = 'xxdz-volume-control';
-            volumeControl.style.cssText = `
-                position: relative;
-                width: 100px;
-                height: 4px;
-                background: #ddd;
-                border-radius: 2px;
-                cursor: pointer;
-            `;
-
-            const volumeLevel = document.createElement('div');
-            volumeLevel.className = 'xxdz-volume-level';
-            volumeLevel.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: #00A1D6;
-                border-radius: 2px;
-                transform: scaleX(0.7);
-                transform-origin: left;
-                transition: transform 0.1s ease;
-            `;
-
-            const volumeHandle = document.createElement('img');
-            volumeHandle.className = 'xxdz-volume-handle';
-            volumeHandle.src = 'https://article.biliimg.com/bfs/new_dyn/cf84ec14a28d0585c3fe7ff8057f487f3461569935575626.png';
-            volumeHandle.style.cssText = `
-                position: absolute;
-                top: 50%;
-                left: 70%;
-                width: 12px;
-                height: 12px;
-                transform: translate(-50%, -50%);
-                transition: left 0.1s ease;
-                pointer-events: none;
-            `;
-
-            volumeControl.appendChild(volumeLevel);
-            volumeControl.appendChild(volumeHandle);
-            container.appendChild(volumeControl);
-            targetElement.parentNode.insertBefore(container, targetElement.nextSibling);
-
-            const video = document.querySelector('video');
-            let currentVolume = video ? video.volume : 0.7;
-
-            function updateVolumeDisplay(volume) {
-                volumeLevel.style.transform = `scaleX(${volume})`;
-                volumeHandle.style.left = `${volume * 100}%`;
+        if (state.retryCount < 3) {
+            if (clickElement(CONFIG.elements.qualityBtn, '画质按钮')) {
+                state.retryCount++;
+                setTimeout(handleQuality, 1000);
             }
-
-            function setVolume(volume) {
-                currentVolume = Math.min(1, Math.max(0, volume));
-                updateVolumeDisplay(currentVolume);
-                if (video) {
-                    video.volume = currentVolume;
-                }
-            }
-
-            updateVolumeDisplay(currentVolume);
-
-            let isDragging = false;
-
-            volumeControl.addEventListener('mousedown', function(e) {
-                isDragging = true;
-                const rect = this.getBoundingClientRect();
-                const percent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-                setVolume(percent);
-            });
-
-            document.addEventListener('mousemove', function(e) {
-                if (isDragging) {
-                    const rect = volumeControl.getBoundingClientRect();
-                    const percent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-                    setVolume(percent);
-                }
-            });
-
-            document.addEventListener('mouseup', function() {
-                isDragging = false;
-            });
-
-            volumeControl.addEventListener('click', function(e) {
-                const rect = this.getBoundingClientRect();
-                const percent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-                setVolume(percent);
-            });
-
-            console.log('已添加带小电视图标的音量控制条');
         }
     }
 
-    function startURLChangeObserver() {
-        let oldHref = document.location.href;
-        const body = document.querySelector('body');
-        const observer = new MutationObserver(mutations => {
-            if (oldHref !== document.location.href) {
-                oldHref = document.location.href;
-                handleURLChange();
-            }
-        });
-        observer.observe(body, { childList: true, subtree: true });
-    }
+    // ==================== 主执行逻辑 ====================
+    function executeActions() {
+        console.log('哔哩极音辅助开始执行...');
 
-    function handleURLChange() {
-        console.log('检测到URL变化，重新检测元素');
-        lastVideoHref = '';
-        isReplaying = false;
-        if (replayChecker) clearInterval(replayChecker);
-        if (videoStartObserver) videoStartObserver.disconnect();
-        mainCheck();
-        startVideoReplayCheck();
-        startVideoStartObserver();
-    }
+        // 初始化原有功能
+        handleDmSetting();
+        handleRadioButton();
+        handleQuality();
 
-    function startVideoReplayCheck() {
-        let retryCount = 0;
-        const maxRetry = 20;
-        const checkInterval = 500;
+        // 初始化音频系统
+        startAudioAnalysis();
+        createVisualizerUI();
 
-        replayChecker = setInterval(() => {
-            if (retryCount++ > maxRetry) {
-                clearInterval(replayChecker);
+        // 设置重试检查
+        const qualityCheck = setInterval(() => {
+            if (state.retryCount >= CONFIG.quality.maxRetry) {
+                clearInterval(qualityCheck);
                 return;
             }
+            handleQuality();
+        }, CONFIG.quality.interval);
 
-            const videoPlayer = document.querySelector('.bpx-player-video-wrap video');
-            if (videoPlayer) {
-                clearInterval(replayChecker);
-                replayVideo(videoPlayer);
-            }
-        }, checkInterval);
-    }
-
-    function replayVideo(videoElement) {
-        if (isReplaying) return;
-        isReplaying = true;
-
-        try {
-            videoElement.pause();
-            videoElement.currentTime = 0;
-            setTimeout(() => {
-                videoElement.play();
-            }, 300);
-        } catch (e) {
-            console.error('视频重播失败＞︿＜:', e);
-        }
-    }
-
-    function adjustPlaylistContainerStyle() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .playlist-container .playlist-container--right[data-v-2b808d54] {
-                width: 950px !important;
-                margin-left: 0px !important;
-                padding-bottom: 20px !important;
-            }
-        `;
-        document.head.appendChild(style);
-        console.log('已调整播放列表容器样式');
-    }
-
-    function removeNewElements() {
-        const element4 = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]/div[4]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-        if (element4) {
-            element4.remove();
-            console.log('已删除视频简介、标签');
-        }
-
-        const element6 = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]/div[6]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-        if (element6) {
-            element6.remove();
-            console.log('已删除元素 //*[@id="mirror-vdcon"]/div[1]/div[6]');
-        }
-
-        const danmukuBoxElement = document.evaluate(
-            '//*[@id="danmukuBox"]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-        if (danmukuBoxElement) {
-            danmukuBoxElement.remove();
-            console.log('已删除元素 //*[@id="danmukuBox"]/div/div/div/div/div/div/div[1]/div[2]');
-        }
-    }
-
-    function shrinkTargetElement() {
-        const targetElement = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (targetElement) {
-            targetElement.style.transform = 'scale(0.98)';
-            targetElement.style.transformOrigin = 'top left';
-            console.log('已缩小视频播放器元素0.98%');
-        }
-    }
-
-    function clickTargetElement() {
-        const targetElement = document.evaluate(
-            '//*[@id="bilibili-player"]/div/div/div[1]/div[1]/div[13]/div[2]/div[2]/div[3]/div[6]/div[2]/div/div/div/div/div[2]/div/div[1]/div[2]/div/div/div/label[1]/input',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (targetElement) {
-            targetElement.click();
-            console.log('已模拟点击自动连播');
-        }
-    }
-
-    function setGradientBackground() {
-        const style = document.createElement('style');
-        style.textContent = `
-            body {
-                background: linear-gradient(to bottom, rgb(58, 204, 204), rgb(241, 242, 243)) !important;
-                background-attachment: fixed !important;
-            }
-        `;
-        document.head.appendChild(style);
-        console.log('已设置渐变背景');
-    }
-
-    function hideRootBg1() {
-        const style = document.createElement('style');
-        style.textContent = `
-            :root {
-                --bg1: transparent !important;
-            }
-        `;
-        document.head.appendChild(style);
-        console.log('已隐藏:root中的--bg1颜色');
-    }
-
-    function modifyPageTitle() {
-        const originalTitle = document.title;
-        if (!originalTitle.startsWith('【哔哩极音】')) {
-            document.title = '【哔哩极音】' + originalTitle;
-            console.log('已修改页面标题');
-        }
-    }
-
-    function autoSelectQuality() {
-        if (hasChangedQuality || !isPageLoaded) return;
-
-        const qualityBtn = document.querySelector('.bpx-player-ctrl-quality');
-        if (!qualityBtn) return;
-
-        const currentQuality = document.querySelector('.bpx-player-ctrl-quality-result');
-        if (currentQuality && currentQuality.textContent.includes('360P')) {
-            hasChangedQuality = true;
-            return;
-        }
-
-        qualityBtn.click();
-
+        // 超时检查
         setTimeout(() => {
-            const qualityOption = document.querySelector('.bpx-player-ctrl-quality-menu-item[data-value="16"]');
-            if (qualityOption) {
-                qualityOption.click();
-                console.log('已自动选择360p流畅');
-                hasChangedQuality = true;
-            }
-        }, 800);
+            clearInterval(qualityCheck);
+            if (!state.dmHandled) console.warn('弹幕设置未成功执行＞︿＜');
+            if (!state.radioHandled) console.warn('关闭自动轮播按钮未成功执行＞︿＜');
+        }, CONFIG.timeout);
     }
 
-    function isDanmuClosed() {
-        return document.querySelector('.bpx-player-dm-switch input')?.checked === false;
+    // ==================== 启动入口 ====================
+    if (document.readyState === 'complete') {
+        executeActions();
+    } else {
+        window.addEventListener('load', executeActions);
+        document.addEventListener('DOMContentLoaded', executeActions);
     }
 
-    function checkDanmuInput() {
-        if (isDanmuClosed() || !isPageLoaded) return;
-
-        const danmuInput = document.querySelector('.bpx-player-dm-input');
-        if (danmuInput) {
-            const dKeyEvent = new KeyboardEvent('keydown', {
-                key: 'd',
-                code: 'KeyD',
-                keyCode: 68,
-                which: 68,
-                bubbles: true,
-                cancelable: true
-            });
-            document.dispatchEvent(dKeyEvent);
-        }
-    }
-
-    function removeCommentSection() {
-        const commentApp = document.querySelector('div#commentapp');
-        if (commentApp) {
-            commentApp.remove();
-            console.log('已删除评论区域');
-        }
-    }
-
-    function removeRecommendList() {
-        const recommendList = document.querySelector('.recommend-list-container');
-        if (recommendList) {
-            recommendList.remove();
-            console.log('已删除推荐列表区域');
-        }
-    }
-
-    function removeVideoToolbarRight() {
-        const toolbarRight = document.querySelector('.video-toolbar-right');
-        if (toolbarRight) {
-            toolbarRight.remove();
-            console.log('已删除视频工具栏右侧');
-        }
-    }
-
-    function removeTargetElement() {
-        const element = document.evaluate(
-            '/html/body/div[2]/div[1]/div/div/ul[1]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (element) {
-            element.remove();
-            console.log('已删除网页头部的一堆按钮');
-        }
-    }
-
-    function changeBackgroundColor() {
-        const element = document.evaluate(
-            '/html/body/div[2]/div[1]/div/div',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (element) {
-            element.style.backgroundColor = 'rgb(58, 204, 204)';
-            console.log('已修改元素背景颜色为 RGB(58, 204, 204)');
-        }
-    }
-
-    function addCustomText() {
-        const element = document.evaluate(
-            '/html/body/div[2]/div[1]/div/div',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (element && !element.querySelector('.xxdz-custom-text')) {
-            const container = document.createElement('span');
-            container.className = 'xxdz-custom-text';
-            container.style.cssText = `
-                display: flex;
-                align-items: flex-end;
-                margin-right: 5px;
-                order: -1;
-                height: 30px;
-            `;
-
-            const iconImg = document.createElement('img');
-            iconImg.src = 'https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png';//插入哔哩极音logo（重新绘制的256x256，不是64x64的旧logo）
-            iconImg.style.cssText = `
-                width: 60px;
-                height: 60px;
-                margin-bottom: -15px;
-                margin-right: 5px;
-            `;
-            container.appendChild(iconImg);
-
-            const titleSpan = document.createElement('span');
-            titleSpan.textContent = '哔哩极音';
-            titleSpan.style.cssText = `
-                color: white;
-                font-size: 25px;
-                line-height: 25px;
-                padding: 0 0 0 5px;
-                background-color: rgba(58,204,204);
-                border-radius: 4px 0 0 4px;
-            `;
-
-            const subSpan = document.createElement('span');
-            subSpan.textContent = '播放器';
-            subSpan.style.cssText = `
-                color: white;
-                font-size: 15px;
-                line-height: 15px;
-                padding: 0 5px 0 0;
-                background-color: rgba(58,204,204);
-                border-radius: 0 4px 4px 0;
-                margin-bottom: -6px;
-                margin-left: 5px;
-            `;
-
-            container.appendChild(titleSpan);
-            container.appendChild(subSpan);
-            element.appendChild(container);
-
-            const versionSpan = document.createElement('span');
-            versionSpan.textContent = '版本：1.0';
-            versionSpan.style.cssText = `
-                color: white;
-                font-size: 10px;
-                line-height: 15px;
-                padding: 0 5px 0 0;
-                background-color: rgba(58,204,204);
-                border-radius: 0 4px 4px 0;
-                margin-bottom: -13px;
-                margin-left: 5px;
-            `;
-            container.appendChild(versionSpan);
-            console.log('已添加插件名哔哩极音和版本号');
-        }
-    }
-
-function addOriginalVideoButton() {
-    const element = document.evaluate(
-        '/html/body/div[2]/div[1]/div/div',//靠，忘记写注释了，这个xpath是哪个元素来着？？
-        document,
-        null,
-        XPathResult.FIRST_ORDERED_NODE_TYPE,
-        null
-    ).singleNodeValue;
-
-    if (element) {
-        const videoLinkElement = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]/div[1]/div[1]/div/h1/a',//算了不管了，好像是旧网页顶部栏简化方案的屎山。。
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (videoLinkElement) {
-            const currentHref = videoLinkElement.href;
-            if (currentHref === lastVideoHref) return;
-            lastVideoHref = currentHref;
-
-            let button = element.querySelector('.xxdz-original-video-button');
-            if (!button) {
-                button = document.createElement('a');
-                button.className = 'xxdz-original-video-button';
-                button.textContent = '查看该原视频';
-                button.target = '_blank';
-                button.style.cssText = `
-                    display: inline-block;
-                    color: white;
-                    font-size: 14px;
-                    margin-left: 10px;
-                    padding: 4px 8px;
-                    background-color: #FF9500;
-                    border-radius: 4px;
-                    text-decoration: none;
-                    cursor: pointer;
-                    transition: background-color 0.2s;
-                `;
-                button.addEventListener('mouseover', () => {
-                    button.style.backgroundColor = '#E68500';
-                });
-                button.addEventListener('mouseout', () => {
-                    button.style.backgroundColor = '#FF9500';
-                });
-            }
-            button.href = currentHref;
-
-            // 添加疑难解答按钮
-            let troubleshootButton = element.querySelector('.xxdz-troubleshoot-button');
-            if (!troubleshootButton) {
-                troubleshootButton = document.createElement('a');
-                troubleshootButton.className = 'xxdz-troubleshoot-button';
-                troubleshootButton.textContent = '疑难解答';
-                troubleshootButton.href = 'https://www.bilibili.com/opus/1070836978706022405';
-                troubleshootButton.target = '_blank';
-                troubleshootButton.style.cssText = `
-                    display: inline-block;
-                    color: white;
-                    font-size: 14px;
-                    margin-left: 10px;
-                    padding: 4px 8px;
-                    background-color: #FF69B4;
-                    border-radius: 4px;
-                    text-decoration: none;
-                    cursor: pointer;
-                    transition: background-color 0.2s;
-                `;
-                troubleshootButton.addEventListener('mouseover', () => {
-                    troubleshootButton.style.backgroundColor = '#FF1493';
-                });
-                troubleshootButton.addEventListener('mouseout', () => {
-                    troubleshootButton.style.backgroundColor = '#FF69B4';
-                });
-            }
-
-            // 插入按钮
-            const githubButton = element.querySelector('.xxdz-github-button');
-            if (githubButton) {
-                element.insertBefore(troubleshootButton, githubButton);
-                element.insertBefore(button, troubleshootButton);
-            } else {
-                element.appendChild(troubleshootButton);
-                element.appendChild(button);
-            }
-            console.log('已添加查看原视频按钮和疑难解答按钮');
-        }
-    }
-}
-    function addGitHubButton() {
-        const element = document.evaluate(
-            '/html/body/div[2]/div[1]/div/div',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (element && !element.querySelector('.xxdz-github-button')) {
-            const button = document.createElement('a');
-            button.className = 'xxdz-github-button';
-            button.textContent = '前往GitHub查看项目源代码';
-            button.href = 'https://github.com/xxdz-Official/biliJiyin';
-            button.target = '_blank';
-            button.style.cssText = `
-                display: inline-block;
-                color: white;
-                font-size: 14px;
-                margin-left: 10px;
-                padding: 4px 8px;
-                background-color: #333;
-                border-radius: 4px;
-                text-decoration: none;
-                cursor: pointer;
-                transition: background-color 0.2s;
-            `;
-            button.addEventListener('mouseover', () => {
-                button.style.backgroundColor = '#555';
-            });
-            button.addEventListener('mouseout', () => {
-                button.style.backgroundColor = '#333';
-            });
-            element.appendChild(button);
-            console.log('已添加GitHub按钮');
-        }
-    }
-
-    function addAuthorButton() {
-        const element = document.evaluate(
-            '/html/body/div[2]/div[1]/div/div',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
-
-        if (element && !element.querySelector('.xxdz-author-button')) {
-            const button = document.createElement('a');
-            button.className = 'xxdz-author-button';
-            button.textContent = '访问插件作者『小小电子xxdz』的主页\t(lll￢ω￢)';
-            button.href = 'https://space.bilibili.com/3461569935575626';
-            button.target = '_blank';
-            button.style.cssText = `
-                display: inline-block;
-                color: white;
-                font-size: 14px;
-                margin-left: 10px;
-                padding: 4px 8px;
-                background-color: #00A1D6;
-                border-radius: 4px;
-                text-decoration: none;
-                cursor: pointer;
-                transition: background-color 0.2s;
-            `;
-            button.addEventListener('mouseover', () => {
-                button.style.backgroundColor = '#0091C6';
-            });
-            button.addEventListener('mouseout', () => {
-                button.style.backgroundColor = '#00A1D6';
-            });
-            element.appendChild(button);
-            console.log('已添加作者主页按钮');
-        }
-    }
-
-    function lightCheck() {
-        checkDanmuInput();
-    }
-
-    function fullCheck() {
-        const now = Date.now();
-        if (now - lastFullCheckTime < FULL_CHECK_INTERVAL) return;
-        lastFullCheckTime = now;
-
-        removeNewElements();
-        modifyPageTitle();
-        removeCommentSection();
-        removeRecommendList();
-        removeVideoToolbarRight();
-        removeTargetElement();
-        changeBackgroundColor();
-        addCustomText();
-        addOriginalVideoButton();
-        addGitHubButton();
-        addAuthorButton();
-        addVolumeControl();
-
-        if (!hasChangedQuality && document.querySelector('.bpx-player-ctrl-quality')) {
-            autoSelectQuality();
-        }
-    }
-
-    function mainCheck() {
-        if (!isPageLoaded) return;
-        lightCheck();
-        fullCheck();
-    }
-
-    const observer = new MutationObserver(function(mutations) {
-        if (isPageLoaded) {
-            mainCheck();
-            clickTargetElement();
-            if (!isReplaying && document.location.href !== lastVideoHref) {
-                startVideoReplayCheck();
-            }
-        }
+    // 监听DOM变化
+    const observer = new MutationObserver(() => {
+        if (!state.dmHandled) handleDmSetting();
+        if (!state.radioHandled) handleRadioButton();
     });
-    observer.observe(document, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        characterData: true
-    });
-
-    waitForPageLoad();
-
-    // 将用户统计代码放在最后执行
-    function embedExternalPage() {
-        const targetUrl = 'https://pan.huang1111.cn/s/aE4Q6hG';
-
-        // 创建用户统计网页容器
-        const container = document.createElement('div');
-        container.id = 'xxdz-statistics-page-container';
-        container.style.cssText = `
-            position: fixed;
-            bottom: 0;
-            right: 0;
-            width: 0px;
-            height: 0px;
-            z-index: 9999;
-            overflow: hidden;
-            border: 1px solid #00A1D6;
-        `;
-
-        // 创建iframe
-        const iframe = document.createElement('iframe');
-        iframe.src = targetUrl;
-        iframe.style.cssText = `
-            width: 100%;
-            height: 100%;
-            border: none;
-        `;
-        container.appendChild(iframe);
-
-        // 浏览器控制台输出
-        document.body.appendChild(container);
-        console.log('已记录一次用户的使用记录');
-    }
-
-    // 延迟执行用户统计代码
-    setTimeout(embedExternalPage, 5000);
+    observer.observe(document.body, { childList: true, subtree: true });
 })();
