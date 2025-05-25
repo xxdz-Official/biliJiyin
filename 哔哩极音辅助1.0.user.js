@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         哔哩极音辅助1.0
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/xxdz-Official/biliJiyin/blob/2a30a1741dde7a7c1b27d9c1fc2a6c105f28c377/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A91.0.user.js
 // @version      1.0
 // @description  哔哩极音弥补+增强（恢复画质/弹幕/自动连播，增加音频可视化）
 // @author       小小电子xxdz
