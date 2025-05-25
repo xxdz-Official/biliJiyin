@@ -1,19 +1,23 @@
 // ==UserScript==
-// @name         哔哩极音辅助1.0
-// @namespace    https://github.com/xxdz-Official/biliJiyin/blob/2a30a1741dde7a7c1b27d9c1fc2a6c105f28c377/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A91.0.user.js
-// @version      1.0
-// @description  哔哩极音弥补+增强（恢复画质/弹幕/自动连播，增加音频可视化）
-// @author       小小电子xxdz
-// @match        https://www.bilibili.com/video/*
-// @icon         https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
-// @grant        none
-// @run-at       document-idle
+// @name 哔哩极音 辅助
+// @namespace https://github.com/xxdz-Official/biliJiyin/edit/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A91.0.user.js
+// @version 1.0.2
+// @description 建议先安装哔哩极音主插件。自动设置1080P画质/弹幕开关/自动连播，增加音频可视化功能
+// @author 小小电子xxdz
+// @match https://www.bilibili.com/video/*
+// @icon https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
+// @license MIT
+// @grant none
+// @run-at document-idle
+// @supportURL https://github.com/xxdz/bili-jiyin-helper/issues
 // ==/UserScript==
-//作者主页：https://space.bilibili.com/3461569935575626
+
+
 (function() {
     'use strict';
 
     // 全局配置
+//作者主页：https://space.bilibili.com/3461569935575626
     const CONFIG = {
         // 画质选择配置
         quality: {
