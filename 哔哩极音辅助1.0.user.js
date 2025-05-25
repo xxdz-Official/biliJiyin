@@ -12,7 +12,7 @@
 // @supportURL https://github.com/xxdz/bili-jiyin-helper/issues
 // ==/UserScript==
 
-
+//插件作者：https://space.bilibili.com/3461569935575626
 (function() {
     'use strict';
 
