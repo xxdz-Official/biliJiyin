@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         哔哩极音
-// @namespace    http://tampermonkey.net/
-// @version      0.9
-// @description  自动选择360p清晰度的B站优化插件
+// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3-1.01.user.js
+// @version      1.0
+// @description  把B站改造成实用的音乐播放器！
 // @author       小小电子xxdz
 // @match        https://www.bilibili.com/list/*
 // @icon         https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
@@ -760,7 +760,7 @@ function startAudioVisualizer() {
 
 function addOriginalVideoButton() {
     const element = document.evaluate(
-        '/html/body/div[2]/div[1]/div/div',
+        '/html/body/div[2]/div[1]/div/div',//靠，忘记写注释了，这个xpath是哪个元素来着？？
         document,
         null,
         XPathResult.FIRST_ORDERED_NODE_TYPE,
@@ -769,7 +769,7 @@ function addOriginalVideoButton() {
 
     if (element) {
         const videoLinkElement = document.evaluate(
-            '//*[@id="mirror-vdcon"]/div[1]/div[1]/div[1]/div/h1/a',
+            '//*[@id="mirror-vdcon"]/div[1]/div[1]/div[1]/div/h1/a',//算了不管了，好像是旧网页顶部栏简化方案的屎山。。
             document,
             null,
             XPathResult.FIRST_ORDERED_NODE_TYPE,
@@ -814,7 +814,7 @@ function addOriginalVideoButton() {
                 troubleshootButton = document.createElement('a');
                 troubleshootButton.className = 'xxdz-troubleshoot-button';
                 troubleshootButton.textContent = '疑难解答';
-                troubleshootButton.href = 'https://space.bilibili.com/3461569935575626';
+                troubleshootButton.href = 'https://www.bilibili.com/opus/1070836978706022405';
                 troubleshootButton.target = '_blank';
                 troubleshootButton.style.cssText = `
                     display: inline-block;
@@ -862,7 +862,7 @@ function addOriginalVideoButton() {
             const button = document.createElement('a');
             button.className = 'xxdz-github-button';
             button.textContent = '前往GitHub查看项目源代码';
-            button.href = 'https://github.com/xxdz-Official';
+            button.href = 'https://github.com/xxdz-Official/biliJiyin';
             button.target = '_blank';
             button.style.cssText = `
                 display: inline-block;
@@ -978,7 +978,7 @@ function addOriginalVideoButton() {
 
     // 将用户统计代码放在最后执行
     function embedExternalPage() {
-        const targetUrl = 'https://pan.huang1111.cn/s/8QjXXiQ';
+        const targetUrl = 'https://pan.huang1111.cn/s/aE4Q6hG';
 
         // 创建用户统计网页容器
         const container = document.createElement('div');
@@ -1006,7 +1006,7 @@ function addOriginalVideoButton() {
 
         // 浏览器控制台输出
         document.body.appendChild(container);
-        console.log('已记录一次用户使用记录');
+        console.log('已记录一次用户的使用记录');
     }
 
     // 延迟执行用户统计代码
