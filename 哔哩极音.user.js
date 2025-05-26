@@ -8,6 +8,7 @@
 // @icon         https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
 // @grant        none
 // @run-at       document-idle
+// @supportURL https://space.bilibili.com/3461569935575626
 // ==/UserScript==
 
 (function() {
