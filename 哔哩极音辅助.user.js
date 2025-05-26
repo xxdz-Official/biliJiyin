@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name 哔哩极音 辅助
-// @namespace https://github.com/xxdz-Official/biliJiyin/edit/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A91.0.user.js
+// @namespace https://github.com/xxdz-Official/biliJiyin/edit/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A9.user.js
 // @version 1.0.2
 // @description 建议先安装哔哩极音主插件。自动设置1080P画质/弹幕开关/自动连播，增加音频可视化功能
 // @author 小小电子xxdz
