@@ -9,7 +9,7 @@
 // @license MIT
 // @grant none
 // @run-at document-idle
-// @supportURL https://github.com/xxdz/bili-jiyin-helper/issues
+// @supportURL https://space.bilibili.com/3461569935575626
 // ==/UserScript==
 
 //插件作者：https://space.bilibili.com/3461569935575626
