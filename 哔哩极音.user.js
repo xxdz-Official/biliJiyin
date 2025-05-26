@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         哔哩极音
-// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3-1.01.user.js
-// @version      1.0
+// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3.user.js
+// @version      1.3
 // @description  把B站改造成实用的音乐播放器！
 // @author       小小电子xxdz
 // @match        https://www.bilibili.com/list/*
@@ -667,6 +667,20 @@ function startAudioVisualizer() {
             console.log('已删除网页头部的一堆按钮');
         }
     }
+    function UPintroduce() {
+        const element = document.evaluate(
+            '/html/body/div[2]/div[2]/div[2]/div[1]/div[1]/div[2]/div[1]/div/div[2]',
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+        ).singleNodeValue;
+
+        if (element) {
+            element.remove();
+            console.log('已删除UP主简介');//虽然但是，这个办法可以永久修复宽屏bug
+        }
+    }
 
     function changeBackgroundColor() {
         const element = document.evaluate(
@@ -940,6 +954,7 @@ function addOriginalVideoButton() {
         removeRecommendList();
         removeVideoToolbarRight();
         removeTargetElement();
+        UPintroduce();
         changeBackgroundColor();
         addCustomText();
         addOriginalVideoButton();
