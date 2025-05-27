@@ -757,7 +757,7 @@ function startAudioVisualizer() {
             element.appendChild(container);
 
             const versionSpan = document.createElement('span');
-            versionSpan.textContent = '版本：1.0';
+            versionSpan.textContent = '版本：1.3';
             versionSpan.style.cssText = `
                 color: white;
                 font-size: 10px;
