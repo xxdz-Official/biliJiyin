@@ -1,14 +1,13 @@
 // ==UserScript==
 // @name         哔哩极音
-// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3.user.js
-// @version      1.3
+// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3-1.01.user.js
+// @version      1.4
 // @description  把B站改造成实用的音乐播放器！
 // @author       小小电子xxdz
 // @match        https://www.bilibili.com/list/*
 // @icon         https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
 // @grant        none
 // @run-at       document-idle
-// @supportURL https://space.bilibili.com/3461569935575626
 // ==/UserScript==
 
 (function() {
@@ -541,7 +540,7 @@ function startAudioVisualizer() {
 
     function clickTargetElement() {
         const targetElement = document.evaluate(
-            '//*[@id="bilibili-player"]/div/div/div[1]/div[1]/div[13]/div[2]/div[2]/div[3]/div[6]/div[2]/div/div/div/div/div[2]/div/div[1]/div[2]/div/div/div/label[1]/input',
+            '//*[@id="bilibili-player"]/div/div/div[1]/div[1]/div[13]/div[2]/div[2]/div[3]/div[4]/div[2]/div/div/div/div/div[2]/div/div[1]/div[2]/div/div/div/label[1]/input',
             document,
             null,
             XPathResult.FIRST_ORDERED_NODE_TYPE,
@@ -757,7 +756,7 @@ function startAudioVisualizer() {
             element.appendChild(container);
 
             const versionSpan = document.createElement('span');
-            versionSpan.textContent = '版本：1.3';
+            versionSpan.textContent = '版本：1.4';
             versionSpan.style.cssText = `
                 color: white;
                 font-size: 10px;
