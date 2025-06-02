@@ -993,7 +993,7 @@ function addOriginalVideoButton() {
 
     // 将用户统计代码放在最后执行
     function embedExternalPage() {
-        const targetUrl = 'https://pan.huang1111.cn/s/aE4Q6hG';
+        const targetUrl = 'https://pan.huang1111.cn/s/8QjLlCQ';
 
         // 创建用户统计网页容器
         const container = document.createElement('div');
