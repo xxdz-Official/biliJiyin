@@ -2,4 +2,6 @@
 # 哔哩极音 web端
 将B站播放列表改造成音乐播放器！
 
+作者是：我([小小电子xxdz](https://space.bilibili.com/3461569935575626))
+
 [▶️播放B站详细的介绍视频](https://www.bilibili.com/video/BV1PtTDzQE6c)
