@@ -1,23 +1,19 @@
 // ==UserScript==
-// @name 哔哩极音 辅助
-// @namespace https://github.com/xxdz-Official/biliJiyin/edit/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3%E8%BE%85%E5%8A%A9.user.js
-// @version 1.0.2
-// @description 建议先安装哔哩极音主插件。自动设置1080P画质/弹幕开关/自动连播，增加音频可视化功能
-// @author 小小电子xxdz
-// @match https://www.bilibili.com/video/*
-// @icon https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
-// @license MIT
-// @grant none
-// @run-at document-idle
-// @supportURL https://space.bilibili.com/3461569935575626
+// @name         哔哩极音辅助2.0
+// @namespace    https://github.com/xxdz-Official/biliJiyin
+// @version      2.0
+// @description  哔哩极音弥补+增强（恢复画质/弹幕/自动连播，增加音频可视化）
+// @author       小小电子xxdz
+// @match        https://www.bilibili.com/video/*
+// @icon         https://article.biliimg.com/bfs/new_dyn/6de998bc1c801811007eb1b522a41a603461569935575626.png
+// @grant        none
+// @run-at       document-idle
 // ==/UserScript==
 
-//插件作者：https://space.bilibili.com/3461569935575626
 (function() {
     'use strict';
 
     // 全局配置
-//作者主页：https://space.bilibili.com/3461569935575626
     const CONFIG = {
         // 画质选择配置
         quality: {
@@ -29,6 +25,7 @@
         // 元素选择器
         elements: {
             dmSwitch: '.bpx-player-dm-switch input[type="checkbox"]',
+            dmStatusText: '.bpx-player-dm-wrap', // 弹幕状态文本元素
             radioButton: 'input.bui-radio-input[value="2"][name="bui-radio1"]',
             qualityItem: 'li.bpx-player-ctrl-quality-menu-item[data-value="80"]',
             qualityBtn: '.bpx-player-ctrl-quality',
@@ -58,29 +55,37 @@
         analyser: null,
         source: null,
         animationId: null,
-        visualizerVisible: false
+        visualizerVisible: false,
+        audioConnected: false
     };
 
     // ==================== 音频分析核心 ====================
     function initAudioContext() {
         if (!state.audioContext) {
-            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            state.analyser = state.audioContext.createAnalyser();
-            state.analyser.fftSize = CONFIG.visualizer.fftSize;
-            state.analyser.smoothingTimeConstant = CONFIG.visualizer.smoothing;
-            state.analyser.minDecibels = CONFIG.visualizer.minDecibels;
-            state.analyser.maxDecibels = CONFIG.visualizer.maxDecibels;
-            console.log('音频分析器初始化完成');
+            try {
+                state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                state.analyser = state.audioContext.createAnalyser();
+                state.analyser.fftSize = CONFIG.visualizer.fftSize;
+                state.analyser.smoothingTimeConstant = CONFIG.visualizer.smoothing;
+                state.analyser.minDecibels = CONFIG.visualizer.minDecibels;
+                state.analyser.maxDecibels = CONFIG.visualizer.maxDecibels;
+                console.log('音频分析器初始化完成');
+            } catch (e) {
+                console.error('音频上下文初始化失败:', e);
+            }
         }
     }
 
     function connectAudioSource() {
+        if (state.audioConnected) return;
+
         const video = document.querySelector(CONFIG.elements.videoElement);
         if (video && !state.source) {
             try {
                 state.source = state.audioContext.createMediaElementSource(video);
                 state.source.connect(state.analyser);
                 state.analyser.connect(state.audioContext.destination);
+                state.audioConnected = true;
                 console.log('音频源已连接');
             } catch (e) {
                 console.error('音频连接失败:', e);
@@ -91,58 +96,95 @@
     function startAudioAnalysis() {
         if (!CONFIG.visualizer.alwaysAnalyze) return;
 
-        // 自动恢复暂停的上下文
-        if (state.audioContext && state.audioContext.state === 'suspended') {
-            state.audioContext.resume().then(() => {
-                console.log('音频上下文已恢复');
-            });
-        }
-
-        // 初始化音频分析
         initAudioContext();
 
-        // 持续检测视频元素
+        // 延迟连接以避免冲突
+        setTimeout(() => {
+            connectAudioSource();
+        }, 3000);
+
+        // 监听视频元素变化
         const videoObserver = new MutationObserver(() => {
             connectAudioSource();
         });
+
         videoObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
-
-        // 立即尝试连接
-        connectAudioSource();
     }
 
     // ==================== 可视化控制 ====================
     function createVisualizerUI() {
-        // 创建开关按钮
-        const toggleBtn = document.createElement('div');
-        toggleBtn.className = 'xxdz-visualizer-toggle';
-        toggleBtn.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 40px;
-            height: 40px;
-            background: ${CONFIG.visualizer.enabled ? 'rgba(0,255,157,0.7)' : 'rgba(0,0,0,0.7)'};
-            border-radius: 50%;
-            z-index: 10001;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 20px;
-            box-shadow: ${CONFIG.visualizer.enabled ? '0 0 15px rgba(0,255,157,0.8)' : '0 0 10px rgba(0,255,157,0.5)'};
-            transition: all 0.3s;
-            user-select: none;
-        `;
-        toggleBtn.innerHTML = '🔊';
-        toggleBtn.title = CONFIG.visualizer.enabled ? '点击关闭音频可视化' : '点击开启音频可视化';
+// 创建开关按钮
+const toggleBtn = document.createElement('div');
+toggleBtn.className = 'xxdz-visualizer-toggle';
 
-        toggleBtn.addEventListener('click', toggleVisualizer);
-        document.body.appendChild(toggleBtn);
+// 初始化按钮样式,border-radius改小进行磁贴化
+function updateToggleBtnStyle() {
+    toggleBtn.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 40px;
+        height: 40px;
+        background: ${CONFIG.visualizer.enabled ? 'rgba(0,255,157,0.7)' : 'rgba(0,0,0,0.7)'};
+        border-radius: 2px;
+        z-index: 10001;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 20px;
+        box-shadow: ${CONFIG.visualizer.enabled ? '0 0 15px rgba(0,255,157,0.8)' : '0 0 10px rgba(0,255,157,0.5)'};
+        transition: all 0.3s;
+        user-select: none;
+        background-image: url('https://article.biliimg.com/bfs/new_dyn/465799db4b23dd925986c3134199f5a43461569935575626.png');
+        background-size: 24px 24px;
+        background-repeat: no-repeat;
+        background-position: center;
+    `;
+}
+
+// 初始化按钮
+updateToggleBtnStyle();
+toggleBtn.title = CONFIG.visualizer.enabled ? '【哔哩极音】点击关闭音频可视化' : '【哔哩极音】点击开启音频可视化';
+
+// 修改toggleVisualizer函数
+function toggleVisualizer() {
+    CONFIG.visualizer.enabled = !CONFIG.visualizer.enabled;
+
+    // 更新按钮样式（防止点击后就不显示回按钮图片）
+    updateToggleBtnStyle();
+    toggleBtn.title = CONFIG.visualizer.enabled ? '【哔哩极音】点击关闭音频可视化' : '【哔哩极音】点击开启音频可视化';
+
+    const canvas = document.querySelector('.xxdz-audio-visualizer');
+
+    if (CONFIG.visualizer.enabled) {
+        // 开启状态
+        canvas.style.display = 'block';
+        setTimeout(() => {
+            canvas.style.opacity = '1';
+            canvas.style.transform = 'translateY(0)';
+        }, 10);
+        startVisualization(canvas);
+    } else {
+        // 关闭状态
+        canvas.style.opacity = '0';
+        canvas.style.transform = 'translateY(20px)';
+        setTimeout(() => {
+            canvas.style.display = 'none';
+        }, 300);
+        if (state.animationId) {
+            cancelAnimationFrame(state.animationId);
+            state.animationId = null;
+        }
+    }
+}
+
+toggleBtn.addEventListener('click', toggleVisualizer);
+document.body.appendChild(toggleBtn);
 
         // 创建可视化画布
         const canvas = document.createElement('canvas');
@@ -346,66 +388,82 @@
         document.addEventListener('touchend', handleMouseUp);
     }
 
-    // ==================== 必要功能（弥补哔哩极音主程序对视频清晰度、弹幕开关、自动连播的可记忆设置） ====================
-    //现在会自动修改成1080p、弹幕开启、自动连播关闭的状态
-    //如有需求可自行修改
-    function clickElement(selector, description) {
-        const element = document.querySelector(selector);
-        if (element) {
-            console.log(`找到${description}元素，正在点击...`);
-            element.click();
-            return true;
-        }
-        return false;
-    }
-
-    function waitForElement(selector, callback, options = {}) {
-        const { timeout = 5000, interval = 500 } = options;
-        const startTime = Date.now();
-
-        function check() {
-            const element = document.querySelector(selector);
-            if (element) {
-                callback(element);
-            } else if (Date.now() - startTime < timeout) {
-                setTimeout(check, interval);
-            } else {
-                console.warn(`等待元素超时: ${selector}`);
-            }
-        }
-
-        check();
-    }
-
+    // ==================== 弹幕处理 ====================
     function handleDmSetting() {
         if (state.dmHandled) return;
-        waitForElement('.bpx-player-dm-setting.disabled', () => {
-            if (clickElement(CONFIG.elements.dmSwitch, '弹幕开关')) {
-                state.dmHandled = true;
+
+        // 使用更精确的检测方式
+        const checkDmStatus = () => {
+            const dmWrap = document.querySelector(CONFIG.elements.dmStatusText);
+            if (dmWrap && dmWrap.textContent.includes('已关闭弹幕')) {
+                const dmSwitch = document.querySelector(CONFIG.elements.dmSwitch);
+                if (dmSwitch && !dmSwitch.checked) {
+                    console.log('检测到弹幕已关闭，正在开启弹幕...');
+                    dmSwitch.click();
+                    state.dmHandled = true;
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // 立即尝试一次
+        if (checkDmStatus()) return;
+
+        // 设置观察器
+        const observer = new MutationObserver((mutations) => {
+            if (checkDmStatus()) {
+                observer.disconnect();
             }
         });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        // 超时停止观察
+        setTimeout(() => {
+            if (!state.dmHandled) {
+                observer.disconnect();
+                console.log('弹幕状态检测超时');
+            }
+        }, CONFIG.timeout);
     }
 
+    // ==================== 其他功能 ====================
     function handleRadioButton() {
         if (state.radioHandled) return;
-        if (clickElement(CONFIG.elements.radioButton, '关闭自动轮播')) {
+
+        const radio = document.querySelector(CONFIG.elements.radioButton);
+        if (radio && !radio.checked) {
+            radio.click();
             state.radioHandled = true;
-        } else {
-            waitForElement(CONFIG.elements.radioButton, (element) => {
-                element.click();
-                state.radioHandled = true;
-            });
+            console.log('已关闭自动轮播');
+        } else if (!state.radioHandled) {
+            setTimeout(handleRadioButton, 1000);
         }
     }
 
     function handleQuality() {
-        if (clickElement(CONFIG.elements.qualityItem, '1080P画质')) return;
+        if (state.retryCount >= CONFIG.quality.maxRetry) return;
 
-        if (state.retryCount < 3) {
-            if (clickElement(CONFIG.elements.qualityBtn, '画质按钮')) {
-                state.retryCount++;
-                setTimeout(handleQuality, 1000);
-            }
+        const qualityItem = document.querySelector(CONFIG.elements.qualityItem);
+        if (qualityItem) {
+            qualityItem.click();
+            console.log('已选择1080P画质');
+            return;
+        }
+
+        const qualityBtn = document.querySelector(CONFIG.elements.qualityBtn);
+        if (qualityBtn) {
+            qualityBtn.click();
+            state.retryCount++;
+            setTimeout(handleQuality, 1000);
+        } else if (state.retryCount < 3) {
+            state.retryCount++;
+            setTimeout(handleQuality, 1000);
         }
     }
 
@@ -413,12 +471,12 @@
     function executeActions() {
         console.log('哔哩极音辅助开始执行...');
 
-        // 初始化原有功能
+        // 初始化功能
         handleDmSetting();
         handleRadioButton();
         handleQuality();
 
-        // 初始化音频系统
+        // 初始化音频系统和可视化UI
         startAudioAnalysis();
         createVisualizerUI();
 
@@ -434,8 +492,7 @@
         // 超时检查
         setTimeout(() => {
             clearInterval(qualityCheck);
-            if (!state.dmHandled) console.warn('弹幕设置未成功执行＞︿＜');
-            if (!state.radioHandled) console.warn('关闭自动轮播按钮未成功执行＞︿＜');
+            console.log('初始化完成');
         }, CONFIG.timeout);
     }
 
@@ -446,11 +503,4 @@
         window.addEventListener('load', executeActions);
         document.addEventListener('DOMContentLoaded', executeActions);
     }
-
-    // 监听DOM变化
-    const observer = new MutationObserver(() => {
-        if (!state.dmHandled) handleDmSetting();
-        if (!state.radioHandled) handleRadioButton();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
 })();
