@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         哔哩极音
-// @namespace    https://github.com/xxdz-Official/-/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3-1.01.user.js
+// @namespace    https://github.com/xxdz-Official/biliJiyin/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3.user.js
 // @version      2.0
 // @description  把B站改造成实用的音乐播放器！
 // @author       小小电子xxdz
