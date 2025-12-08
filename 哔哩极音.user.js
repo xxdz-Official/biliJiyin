@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         哔哩极音
 // @namespace    https://github.com/xxdz-Official/biliJiyin/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3.user.js
-// @version      2.0
+// @version      2.1
 // @description  把B站改造成实用的音乐播放器！
 // @author       小小电子xxdz
 // @match        https://www.bilibili.com/list/*
@@ -18,9 +18,20 @@
 //修改了音谱音谱的部分UI，去掉了流动色相，改为了更简约的风格，示波器为初音未来应援色，分析器为洛天依应援色UwU
 //(>皿<)新增的bug!
 //由于屎山代码，新增了俩bug，就是v1版本的修改视频和播放列表位置大小的功能失效了。。
+//如果是稍后再看，则不运行哔哩极音，比较稍后再看不一定是打算后台听的音乐嘛
 //
 (function() {
     'use strict';
+
+        // ========== 检查是否为稍后再看页面，如果是的话就不运行哔哩极音 ==========
+    function isWatchLaterPage() {
+        return window.location.href.includes('https://www.bilibili.com/list/watchlater/');
+    }
+
+    if (isWatchLaterPage()) {
+        console.log('检测到稍后再看页面，脚本停止执行 (＞﹏＜)');
+        return;
+    }
 
     let hasChangedQuality = false;
     let lastFullCheckTime = 0;
@@ -721,7 +732,7 @@ function removeVideoTagContainer() {
             container.appendChild(subSpan);
 
             const versionSpan = document.createElement('span');
-            versionSpan.textContent = '版本：2.0';
+            versionSpan.textContent = '版本：2.1';
             versionSpan.style.cssText = `
                 color: white;
                 font-size: 10px;
