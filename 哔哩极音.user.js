@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         哔哩极音
 // @namespace    https://github.com/xxdz-Official/biliJiyin/blob/main/%E5%93%94%E5%93%A9%E6%9E%81%E9%9F%B3.user.js
-// @version      2.1
+// @version      2.2
 // @description  把B站改造成实用的音乐播放器！
 // @author       小小电子xxdz
 // @match        https://www.bilibili.com/list/*
@@ -9,7 +9,6 @@
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
-
 
 //更新日志
 //2.0版本修复了一些性能问题，比如修复了一些不必要的无限循环执行
@@ -23,15 +22,18 @@
 (function() {
     'use strict';
 
-        // ========== 检查是否为稍后再看页面，如果是的话就不运行哔哩极音 ==========
+    // ========== 检查是否为稍后再看页面，如果是的话就不运行哔哩极音 ==========
     function isWatchLaterPage() {
-        return window.location.href.includes('https://www.bilibili.com/list/watchlater/');
+        // 修复：检查当前URL是否包含"/list/watchlater"路径
+        return window.location.pathname.includes('/list/watchlater') ||
+               window.location.href.includes('/list/watchlater?');
     }
 
     if (isWatchLaterPage()) {
         console.log('检测到稍后再看页面，脚本停止执行 (＞﹏＜)');
-        return;
+        return; // 直接退出，不执行任何功能
     }
+
 
     let hasChangedQuality = false;
     let lastFullCheckTime = 0;
